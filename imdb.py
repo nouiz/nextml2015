@@ -59,8 +59,6 @@ def get_dataset_file(dataset, default_dataset, origin):
         # Check if dataset is in the data directory.
         new_path = os.path.join(
             os.path.split(__file__)[0],
-            "..",
-            "data",
             dataset
         )
         if os.path.isfile(new_path) or data_file == default_dataset:

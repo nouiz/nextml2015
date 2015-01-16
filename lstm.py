@@ -371,12 +371,9 @@ def pred_error(f_pred, prepare_data, data, iterator, verbose=False):
 
     return valid_err
 
-print 'Loading data'
-train, valid, test = load_data(n_words=n_words, valid_portion=0.05,
-                               maxlen=maxlen)
-
 
 def train_lstm(
+    train, valid, test,
     dim_proj=128,  # word embeding dimension and LSTM number of hidden units.
     patience=10,  # Number of epoch to wait before early stop if no progress
     max_epochs=5000,  # The maximum number of epoch to run
@@ -389,7 +386,6 @@ def train_lstm(
     saveto='lstm_model.npz',  # The best model will be saved there
     validFreq=370,  # Compute the validation error after this number of update.
     saveFreq=1110,  # Save the parameters after every saveFreq updates
-    maxlen=100,  # Sequence longer then this get ignored
     batch_size=16,  # The batch size during training.
     valid_batch_size=64,  # The batch size used for validation/test set.
     dataset='imdb',
@@ -404,9 +400,10 @@ def train_lstm(
 
     # Model options
     model_options = locals().copy()
+    del model_options['train']
+    del model_options['valid']
+    del model_options['test']
     print "model options", model_options
-
-    load_data, prepare_data = get_dataset(dataset)
 
     if test_size > 0:
         test = (test[0][:test_size], test[1][:test_size])
@@ -576,8 +573,16 @@ theano.config.floatX = "float32"
 # The next line is the new Theano default. This is a speed up.
 theano.config.scan.allow_gc = False
 
+print 'Loading data'
+n_words=10000
+load_data, prepare_data = get_dataset("imdb")
+train, valid, test = load_data(n_words=n_words, valid_portion=0.05,
+                               maxlen=100)
+
 # See function train for all possible parameter and there definition.
 train_lstm(
+    train, valid, test,
     max_epochs=15,
     test_size=500,
+    n_words=n_words,
 )
