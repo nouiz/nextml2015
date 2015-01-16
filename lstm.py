@@ -371,6 +371,10 @@ def pred_error(f_pred, prepare_data, data, iterator, verbose=False):
 
     return valid_err
 
+print 'Loading data'
+train, valid, test = load_data(n_words=n_words, valid_portion=0.05,
+                               maxlen=maxlen)
+
 
 def train_lstm(
     dim_proj=128,  # word embeding dimension and LSTM number of hidden units.
@@ -404,9 +408,6 @@ def train_lstm(
 
     load_data, prepare_data = get_dataset(dataset)
 
-    print 'Loading data'
-    train, valid, test = load_data(n_words=n_words, valid_portion=0.05,
-                                   maxlen=maxlen)
     if test_size > 0:
         test = (test[0][:test_size], test[1][:test_size])
 
@@ -570,16 +571,13 @@ def train_lstm(
     return train_err, valid_err, test_err
 
 
-if __name__ == '__main__':
+# We must have floatX=float32 for this tutorial to work correctly.
+theano.config.floatX = "float32"
+# The next line is the new Theano default. This is a speed up.
+theano.config.scan.allow_gc = False
 
-    # We must have floatX=float32 for this tutorial to work correctly.
-    theano.config.floatX = "float32"
-    # The next line is the new Theano default. This is a speed up.
-    theano.config.scan.allow_gc = False
-
-    # See function train for all possible parameter and there definition.
-    train_lstm(
-        #reload_model="lstm_model.npz",
-        max_epochs=100,
-        #test_size=500,
-    )
+# See function train for all possible parameter and there definition.
+train_lstm(
+    max_epochs=15,
+    test_size=500,
+)
