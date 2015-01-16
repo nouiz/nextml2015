@@ -381,7 +381,9 @@ def train_lstm(
     decay_c=0.,  # Weight decay for the classifier applied to the U weights.
     lrate=0.0001,  # Learning rate for sgd (not used for adadelta and rmsprop)
     n_words=10000,  # Vocabulary size
-    optimizer=adadelta,  # sgd, adadelta and rmsprop available, sgd very hard to use, not recommanded (probably need momentum and decaying learning rate).
+    # sgd, adadelta and rmsprop available,
+    # sgd very hard to use, not recommanded (probably need momentum and decaying learning rate).
+    optimizer=adadelta,
     encoder='lstm',  # TODO: can be removed must be lstm.
     saveto='lstm_model.npz',  # The best model will be saved there
     validFreq=370,  # Compute the validation error after this number of update.
@@ -445,7 +447,7 @@ def train_lstm(
     f_grad_shared, f_update = optimizer(lr, tparams, grads,
                                         x, mask, y, cost)
 
-    print 'Optimization'
+    print 'Training'
 
     kf_valid = get_minibatches_idx(len(valid[0]), valid_batch_size,
                                    shuffle=True)
@@ -546,11 +548,13 @@ def train_lstm(
         print "Training interupted"
 
     end_time = time.clock()
+    print "Training done"
     if best_p is not None:
         zipp(best_p, tparams)
     else:
         best_p = unzip(tparams)
 
+    print "Computing errors"
     use_noise.set_value(0.)
     train_err = pred_error(f_pred, prepare_data, train, kf)
     valid_err = pred_error(f_pred, prepare_data, valid, kf_valid)
@@ -574,7 +578,7 @@ theano.config.floatX = "float32"
 theano.config.scan.allow_gc = False
 
 print 'Loading data'
-n_words=10000
+n_words = 10000
 load_data, prepare_data = get_dataset("imdb")
 train, valid, test = load_data(n_words=n_words, valid_portion=0.05,
                                maxlen=100)
