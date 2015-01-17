@@ -582,14 +582,15 @@ n_words = 10000
 load_data, prepare_data = get_dataset("imdb")
 train, valid, test = load_data(n_words=n_words, valid_portion=0.05,
                                maxlen=100)
+train = ([r[::-1] for r in train[0]], train[1])
+valid = ([r[::-1] for r in valid[0]], valid[1])
+test = ([r[::-1] for r in test[0]], test[1])
 print 'Loading data: Done'
 print "See the comment at the end of this cell to train the model."
 
 # See function train for all possible parameter and there definition.
 #train_lstm(
 #    train, valid, test,
-# I set max_epochs to only 16, as this is enought to
-# show that the network learn. A real job should try for longer.
 #    max_epochs=16,
 #    test_size=500,
 #    n_words=n_words,
