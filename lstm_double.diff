@@ -1,0 +1,155 @@
+--- lstm.py.orig	2015-01-16 17:20:22.075153409 -0800
++++ lstm_double.py	2015-01-16 17:20:16.627153500 -0800
+@@ -227,7 +227,7 @@
+     return f_grad_shared, f_update
+ 
+ 
+-def adadelta(lr, tparams, grads, x, mask, y, cost):
++def adadelta(lr, tparams, grads, x, rx, mask, y, cost):
+     zipped_grads = [theano.shared(p.get_value() * numpy.float32(0.),
+                                   name='%s_grad' % k)
+                     for k, p in tparams.iteritems()]
+@@ -242,7 +242,7 @@
+     rg2up = [(rg2, 0.95 * rg2 + 0.05 * (g ** 2))
+              for rg2, g in zip(running_grads2, grads)]
+ 
+-    f_grad_shared = theano.function([x, mask, y], cost, updates=zgup + rg2up,
++    f_grad_shared = theano.function([x, rx, mask, y], cost, updates=zgup + rg2up,
+                                     name='adadelta_f_grad_shared')
+ 
+     updir = [-tensor.sqrt(ru2 + 1e-6) / tensor.sqrt(rg2 + 1e-6) * zg
+@@ -260,7 +260,7 @@
+     return f_grad_shared, f_update
+ 
+ 
+-def rmsprop(lr, tparams, grads, x, mask, y, cost):
++def rmsprop(lr, tparams, grads, x, rx, mask, y, cost):
+     zipped_grads = [theano.shared(p.get_value() * numpy.float32(0.),
+                                   name='%s_grad' % k)
+                     for k, p in tparams.iteritems()]
+@@ -276,7 +276,7 @@
+     rg2up = [(rg2, 0.95 * rg2 + 0.05 * (g ** 2))
+              for rg2, g in zip(running_grads2, grads)]
+ 
+-    f_grad_shared = theano.function([x, mask, y], cost,
++    f_grad_shared = theano.function([x, rx, mask, y], cost,
+                                     updates=zgup + rgup + rg2up,
+                                     name='rmsprop_f_grad_shared')
+ 
+@@ -302,32 +302,39 @@
+     use_noise = theano.shared(numpy.float32(0.))
+ 
+     x = tensor.matrix('x', dtype='int64')
++    rx = tensor.matrix('rx', dtype='int64')
+     mask = tensor.matrix('mask', dtype='float32')
+     y = tensor.vector('y', dtype='int64')
+ 
+     n_timesteps = x.shape[0]
+     n_samples = x.shape[1]
+ 
+-    emb = tparams['Wemb'][x.flatten()].reshape([n_timesteps,
+-                                                n_samples,
+-                                                options['dim_proj']])
+-    proj = get_layer(options['encoder'])[1](tparams, emb, options,
+-                                            prefix=options['encoder'],
+-                                            mask=mask)
+-    if options['encoder'] == 'lstm':
+-        proj = (proj * mask[:, :, None]).sum(axis=0)
+-        proj = proj / mask.sum(axis=0)[:, None]
+-    if options['use_dropout']:
+-        proj = dropout_layer(proj, use_noise, trng)
++    lstm_outs = []
++    for inp in [x, rx]:
++        emb = tparams['Wemb'][inp.flatten()].reshape([n_timesteps,
++                                                    n_samples,
++                                                    options['dim_proj']])
++        proj = get_layer(options['encoder'])[1](tparams, emb, options,
++                                                prefix=options['encoder'],
++                                                mask=mask)
++        if options['encoder'] == 'lstm':
++            proj = (proj * mask[:, :, None]).sum(axis=0)
++            proj = proj / mask.sum(axis=0)[:, None]
++        if options['use_dropout']:
++            proj = dropout_layer(proj, use_noise, trng)
++        lstm_outs.append(proj)
++
++    del proj
++    pred = tensor.nnet.softmax(tensor.dot(theano.tensor.concatenate(lstm_outs),
++                                          tparams['U']) + tparams['b'])
++    pred = pred.reshape((2, pred.shape[0]/2, pred.shape[1])).mean(axis=0)
+ 
+-    pred = tensor.nnet.softmax(tensor.dot(proj, tparams['U']) + tparams['b'])
+-
+-    f_pred_prob = theano.function([x, mask], pred, name='f_pred_prob')
+-    f_pred = theano.function([x, mask], pred.argmax(axis=1), name='f_pred')
++    f_pred_prob = theano.function([x, rx, mask], pred, name='f_pred_prob')
++    f_pred = theano.function([x, rx, mask], pred.argmax(axis=1), name='f_pred')
+ 
+     cost = -tensor.log(pred[tensor.arange(n_samples), y] + 1e-8).mean()
+ 
+-    return use_noise, x, mask, y, f_pred_prob, f_pred, cost
++    return use_noise, x, rx, mask, y, f_pred_prob, f_pred, cost
+ 
+ 
+ def pred_probs(f_pred_prob, prepare_data, data, iterator, verbose=False):
+@@ -343,6 +350,9 @@
+         x, mask, y = prepare_data([data[0][t] for t in valid_index],
+                                   numpy.array(data[1])[valid_index],
+                                   maxlen=None)
++        rx, _, _ = prepare_data([data[0][t][::-1] for t in valid_index],
++                                  numpy.array(data[1])[valid_index],
++                                  maxlen=None)
+         pred_probs = f_pred_prob(x, mask)
+         probs[valid_index, :] = pred_probs
+ 
+@@ -364,7 +374,10 @@
+         x, mask, y = prepare_data([data[0][t] for t in valid_index],
+                                   numpy.array(data[1])[valid_index],
+                                   maxlen=None)
+-        preds = f_pred(x, mask)
++        rx, _, _ = prepare_data([data[0][t][::-1] for t in valid_index],
++                                numpy.array(data[1])[valid_index],
++                                maxlen=None)
++        preds = f_pred(x, rx, mask)
+         targets = numpy.array(data[1])[valid_index]
+         valid_err += (preds == targets).sum()
+     valid_err = 1. - numpy.float32(valid_err) / len(data[0])
+@@ -428,7 +441,7 @@
+     tparams = init_tparams(params)
+ 
+     # use_noise is for dropout
+-    (use_noise, x, mask,
++    (use_noise, x, rx, mask,
+      y, f_pred_prob, f_pred, cost) = build_model(tparams, model_options)
+ 
+     if decay_c > 0.:
+@@ -438,14 +451,14 @@
+         weight_decay *= decay_c
+         cost += weight_decay
+ 
+-    f_cost = theano.function([x, mask, y], cost, name='f_cost')
++    f_cost = theano.function([x, rx, mask, y], cost, name='f_cost')
+ 
+     grads = tensor.grad(cost, wrt=tparams.values())
+-    f_grad = theano.function([x, mask, y], grads, name='f_grad')
++    f_grad = theano.function([x, rx, mask, y], grads, name='f_grad')
+ 
+     lr = tensor.scalar(name='lr')
+     f_grad_shared, f_update = optimizer(lr, tparams, grads,
+-                                        x, mask, y, cost)
++                                        x, rx, mask, y, cost)
+ 
+     print 'Training'
+ 
+@@ -488,9 +501,10 @@
+                 # This swap the axis!
+                 # Return something of shape (minibatch maxlen, n samples)
+                 x, mask, y = prepare_data(x, y)
++                rx, _, Y = prepare_data([t[::-1] for t in x], y)
+                 n_samples += x.shape[1]
+ 
+-                cost = f_grad_shared(x, mask, y)
++                cost = f_grad_shared(x, rx, mask, y)
+                 f_update(lrate)
+ 
+                 if numpy.isnan(cost) or numpy.isinf(cost):
